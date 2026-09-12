@@ -1,0 +1,1 @@
+"""DocuMind MCP server module."""

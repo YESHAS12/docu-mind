@@ -1,0 +1,1 @@
+"""DocuMind retrieval module."""
