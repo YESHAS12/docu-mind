@@ -8,6 +8,7 @@ import os
 import time
 from pathlib import Path
 import streamlit as st
+import pandas as pd
 
 # Ensure root directory in sys.path
 BASE_DIR = Path(__file__).resolve().parent
@@ -15,7 +16,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from src.config import get_groq_api_key, DEFAULT_GROQ_MODEL, SAMPLE_DOCS_DIR
-from src.retrieval.vectorstore import vectorstore_exists
+from src.retrieval.vectorstore import vectorstore_exists, add_file_to_vectorstore
 from src.scripts_runner import ensure_knowledge_base_ready
 from src.agents.graph import run_agent
 
@@ -183,7 +184,32 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("#### 📂 Seeded Sample Documents")
+    st.markdown("#### 📤 Upload New Documents")
+    st.caption("Upload files to dynamically index them into the vector knowledge base:")
+    uploaded_files = st.file_uploader(
+        "Upload PDF, PPTX, XLSX, MD, or TXT",
+        type=["pdf", "pptx", "xlsx", "md", "txt"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        key="doc_uploader"
+    )
+    if uploaded_files:
+        newly_indexed = 0
+        for uploaded_file in uploaded_files:
+            dest_file = SAMPLE_DOCS_DIR / uploaded_file.name
+            if not dest_file.exists():
+                with open(dest_file, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                with st.spinner(f"Indexing '{uploaded_file.name}'..."):
+                    chunk_count = add_file_to_vectorstore(dest_file)
+                st.toast(f"✅ Indexed '{uploaded_file.name}' ({chunk_count} chunks)!", icon="🎉")
+                newly_indexed += 1
+        if newly_indexed > 0:
+            st.rerun()
+
+    st.markdown("---")
+    st.markdown("#### 📂 Knowledge Base Documents")
+    st.caption("Click any document to inspect contents or download:")
     if SAMPLE_DOCS_DIR.exists():
         for doc_file in sorted(SAMPLE_DOCS_DIR.iterdir()):
             if doc_file.is_file():
@@ -197,7 +223,56 @@ with st.sidebar:
                     icon = "📽️"
                 elif ext == ".md":
                     icon = "📝"
-                st.markdown(f"{icon} `{doc_file.name}`")
+
+                with st.expander(f"{icon} {doc_file.name}", expanded=False):
+                    try:
+                        with open(doc_file, "rb") as f:
+                            file_bytes = f.read()
+                        st.download_button(
+                            label=f"⬇️ Download {doc_file.name}",
+                            data=file_bytes,
+                            file_name=doc_file.name,
+                            key=f"dl_{doc_file.name}",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.caption(f"Download unavailable: {e}")
+
+                    # Content preview
+                    if ext in (".md", ".txt"):
+                        try:
+                            st.markdown(doc_file.read_text(encoding="utf-8")[:1200] + ("..." if doc_file.stat().st_size > 1200 else ""))
+                        except Exception:
+                            st.caption("Preview unavailable.")
+                    elif ext == ".xlsx":
+                        try:
+                            xls = pd.ExcelFile(doc_file)
+                            for sheet in xls.sheet_names[:2]:
+                                st.caption(f"Sheet: `{sheet}`")
+                                df_preview = pd.read_excel(xls, sheet_name=sheet)
+                                st.dataframe(df_preview.head(5), use_container_width=True)
+                        except Exception as e:
+                            st.caption(f"Preview unavailable: {e}")
+                    elif ext == ".pdf":
+                        try:
+                            import pypdf
+                            reader = pypdf.PdfReader(str(doc_file))
+                            page_text = reader.pages[0].extract_text() if reader.pages else ""
+                            st.text_area("Page 1 Preview", value=page_text[:600], height=120, disabled=True)
+                        except Exception:
+                            st.caption("PDF preview unavailable.")
+                    elif ext in (".pptx", ".ppt"):
+                        try:
+                            from pptx import Presentation
+                            prs = Presentation(str(doc_file))
+                            slide_texts = []
+                            for idx, s in enumerate(prs.slides[:2], 1):
+                                for shape in s.shapes:
+                                    if shape.has_text_frame:
+                                        slide_texts.append(f"[Slide {idx}] {shape.text_frame.text.strip()}")
+                            st.text_area("Slides Preview", value="\n".join(slide_texts)[:600], height=120, disabled=True)
+                        except Exception:
+                            st.caption("PPTX preview unavailable.")
 
     st.markdown("---")
     st.markdown("#### 💡 Try Sample Questions")
