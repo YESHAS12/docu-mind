@@ -1,6 +1,7 @@
 # Secrets & Local Environments
 .env
 .env.local
+.streamlit/secrets.toml
 
 # Python artifacts
 __pycache__/
