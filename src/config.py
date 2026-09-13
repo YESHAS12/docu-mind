@@ -33,7 +33,7 @@ def get_groq_api_key() -> str:
 
 
 # Model constants
-DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 COLLECTION_NAME = "documind_docs"
 CHUNK_SIZE = 700
