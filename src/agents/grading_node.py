@@ -1,8 +1,12 @@
-"""Grading node evaluating relevance of retrieved documents to the query."""
+"""Grading node evaluating relevance of retrieved documents to the query.
+Uses the fast 8B model — binary yes/no classification task.
+"""
 
+import time
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from src.config import get_groq_api_key, DEFAULT_GROQ_MODEL
+from groq import RateLimitError
+from src.config import get_groq_api_key, FAST_GROQ_MODEL
 from src.agents.state import AgentState
 
 GRADING_PROMPT = """You are an objective document relevance evaluator.
@@ -21,6 +25,18 @@ Respond strictly with ONLY ONE of the following two words:
 Do not include any explanation or extra characters."""
 
 
+def _call_with_retry(chain, inputs: dict, max_retries: int = 3):
+    for attempt in range(max_retries):
+        try:
+            return chain.invoke(inputs)
+        except RateLimitError:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(2 ** attempt)
+        except Exception:
+            raise
+
+
 def grading_node(state: AgentState) -> dict:
     """Evaluate whether the retrieved documents are relevant to the query."""
     question = state.get("query", "")
@@ -34,12 +50,12 @@ def grading_node(state: AgentState) -> dict:
     context_snippets = "\n---\n".join([d.page_content for d in docs[:3]])
 
     api_key = get_groq_api_key()
-    llm = ChatGroq(api_key=api_key, model=DEFAULT_GROQ_MODEL, temperature=0)
+    llm = ChatGroq(api_key=api_key, model=FAST_GROQ_MODEL, temperature=0)
     prompt = ChatPromptTemplate.from_template(GRADING_PROMPT)
     chain = prompt | llm
 
     try:
-        response = chain.invoke({
+        response = _call_with_retry(chain, {
             "question": question,
             "context": context_snippets
         })

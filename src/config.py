@@ -34,7 +34,9 @@ def get_groq_api_key() -> str:
 
 # Model constants
 DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+# Lightweight model for classification/grading nodes (much higher rate limits)
+FAST_GROQ_MODEL = os.getenv("FAST_GROQ_MODEL", "llama-3.1-8b-instant")
+EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 COLLECTION_NAME = "documind_docs"
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100

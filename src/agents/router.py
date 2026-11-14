@@ -1,8 +1,12 @@
-"""Router node for classifying user query intent."""
+"""Router node for classifying user query intent.
+Uses the fast 8B model — only classifies into one of three words, needs zero quality headroom.
+"""
 
+import time
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from src.config import get_groq_api_key, DEFAULT_GROQ_MODEL
+from groq import RateLimitError
+from src.config import get_groq_api_key, FAST_GROQ_MODEL
 from src.agents.state import AgentState
 
 ROUTER_PROMPT = """You are an expert query classifier for an enterprise intelligence system.
@@ -17,18 +21,31 @@ Query: {query}
 Respond strictly with ONLY ONE of the following three words: 'spreadsheet', 'docs', or 'general'."""
 
 
+def _call_with_retry(chain, inputs: dict, max_retries: int = 3):
+    """Call a LangChain chain with exponential backoff on 429 rate limit errors."""
+    for attempt in range(max_retries):
+        try:
+            return chain.invoke(inputs)
+        except RateLimitError:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(2 ** attempt)  # 1s, 2s, 4s
+        except Exception:
+            raise
+
+
 def router_node(state: AgentState) -> dict:
     """Classify the incoming user query into docs, spreadsheet, or general."""
     query = state.get("query", "").strip()
     trace = list(state.get("trace", []))
-    
+
     api_key = get_groq_api_key()
-    llm = ChatGroq(api_key=api_key, model=DEFAULT_GROQ_MODEL, temperature=0)
+    llm = ChatGroq(api_key=api_key, model=FAST_GROQ_MODEL, temperature=0)
     prompt = ChatPromptTemplate.from_template(ROUTER_PROMPT)
     chain = prompt | llm
 
     try:
-        response = chain.invoke({"query": query})
+        response = _call_with_retry(chain, {"query": query})
         raw_route = response.content.strip().lower()
         if "spreadsheet" in raw_route:
             route = "spreadsheet"

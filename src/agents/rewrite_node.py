@@ -1,8 +1,12 @@
-"""Rewrite node for reformulating queries when initial retrieval is insufficient."""
+"""Rewrite node for reformulating queries when initial retrieval is insufficient.
+Uses the fast 8B model — query reformulation doesn't need a 70B model.
+"""
 
+import time
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from src.config import get_groq_api_key, DEFAULT_GROQ_MODEL
+from groq import RateLimitError
+from src.config import get_groq_api_key, FAST_GROQ_MODEL
 from src.agents.state import AgentState
 
 REWRITE_PROMPT = """You are an expert search query optimizer.
@@ -15,6 +19,18 @@ Previous Attempt: {previous_query}
 Provide ONLY the reformulated search query. Do not include quotes, explanations, or introductory text."""
 
 
+def _call_with_retry(chain, inputs: dict, max_retries: int = 3):
+    for attempt in range(max_retries):
+        try:
+            return chain.invoke(inputs)
+        except RateLimitError:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(2 ** attempt)
+        except Exception:
+            raise
+
+
 def rewrite_node(state: AgentState) -> dict:
     """Reformulate the user query to attempt better retrieval."""
     question = state.get("query", "")
@@ -23,12 +39,12 @@ def rewrite_node(state: AgentState) -> dict:
     trace = list(state.get("trace", []))
 
     api_key = get_groq_api_key()
-    llm = ChatGroq(api_key=api_key, model=DEFAULT_GROQ_MODEL, temperature=0.2)
+    llm = ChatGroq(api_key=api_key, model=FAST_GROQ_MODEL, temperature=0.2)
     prompt = ChatPromptTemplate.from_template(REWRITE_PROMPT)
     chain = prompt | llm
 
     try:
-        response = chain.invoke({
+        response = _call_with_retry(chain, {
             "question": question,
             "previous_query": current_attempt
         })

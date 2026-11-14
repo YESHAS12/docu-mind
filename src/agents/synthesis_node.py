@@ -1,10 +1,24 @@
 """Synthesis node producing the final grounded answer with source citations."""
 
-from typing import List, Set
+import time
+from typing import Set
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
+from groq import RateLimitError
 from src.config import get_groq_api_key, DEFAULT_GROQ_MODEL
 from src.agents.state import AgentState
+
+
+def _call_with_retry(chain, inputs: dict, max_retries: int = 3):
+    for attempt in range(max_retries):
+        try:
+            return chain.invoke(inputs)
+        except RateLimitError:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(2 ** attempt)
+        except Exception:
+            raise
 
 DOCS_SYNTHESIS_PROMPT = """You are DocuMind, an enterprise document intelligence assistant.
 Synthesize a clear, accurate, and helpful response to the user's question based strictly on the provided context passages.
@@ -58,7 +72,7 @@ def synthesis_node(state: AgentState) -> dict:
         prompt = ChatPromptTemplate.from_template(SPREADSHEET_SYNTHESIS_PROMPT)
         chain = prompt | llm
         try:
-            resp = chain.invoke({
+            resp = _call_with_retry(chain, {
                 "calculation_result": calc_result,
                 "question": query,
                 "sources": sources_str
@@ -72,7 +86,7 @@ def synthesis_node(state: AgentState) -> dict:
         prompt = ChatPromptTemplate.from_template(GENERAL_SYNTHESIS_PROMPT)
         chain = prompt | llm
         try:
-            resp = chain.invoke({"question": query})
+            resp = _call_with_retry(chain, {"question": query})
             answer = resp.content.strip()
         except Exception as e:
             answer = "Hello! I am DocuMind, your document intelligence assistant. How can I assist you with your documents today?"
@@ -95,7 +109,7 @@ def synthesis_node(state: AgentState) -> dict:
             prompt = ChatPromptTemplate.from_template(DOCS_SYNTHESIS_PROMPT)
             chain = prompt | llm
             try:
-                resp = chain.invoke({
+                resp = _call_with_retry(chain, {
                     "context": context_str,
                     "question": query
                 })
