@@ -32,10 +32,10 @@ def get_groq_api_key() -> str:
     return key
 
 
-# Model constants
-DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-# Lightweight model for classification/grading nodes (much higher rate limits)
-FAST_GROQ_MODEL = os.getenv("FAST_GROQ_MODEL", "llama-3.1-8b-instant")
+# Model constants — use models actually available on this Groq account
+DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+# Smaller model for routing/grading/rewrite nodes (saves quota)
+FAST_GROQ_MODEL = os.getenv("FAST_GROQ_MODEL", "openai/gpt-oss-20b")
 EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 COLLECTION_NAME = "documind_docs"
 CHUNK_SIZE = 700
